@@ -1,6 +1,6 @@
 # Securing Microservices on AWS with Cognito, API Gateway and Lambda
 
-This demo is based on [https://github.com/csepulv/auth-api-demo](https://github.com/csepulv/auth-api-demo). Most of the manual setups are automated using AWS CDK.
+This demo is based on [https://github.com/csepulv/auth-api-demo](https://github.com/csepulv/auth-api-demo). Most of the manual steps are automated using AWS CDK.
 
 # Lambda Setup
 

@@ -12,11 +12,11 @@ Go to the `cdk` directory and run the following commands.
 
 1. Run `npm install` to install the required packages.
 2. Run `cdk bootstrap`. This is required to deploy the necessary resources (e.g. S3 bucket) required by CDK.
-3. Run `cdk deploy`. This deploys most of the resources used in this demo including Cognito User Pool, Lambda function, API Gateway.
+3. Run `cdk deploy`. This deploys most of the resources used in this demo including Cognito User Pool, Lambda function, API Gateway, S3 bucket for the React app, and CloudFront Distribution.
 
 # Identity Pool
 
-Because the current version of CDK doesn't support Cognito Identity Pool, we need to create and configure it manually.
+Because the current version (`1.69.0`) of CDK doesn't support Cognito Identity Pool, we need to create and configure it manually.
 
 1. From the Cognito main page, click **Manage Identity Pools**, then click **Create new identity pool**.
 2. Under Authentication Providers, enter the `User Pool ID` and `App Client ID` created in the earlier steps.
@@ -43,8 +43,6 @@ The `authenticated user role` needs to be edited to provide access to appropriat
 ```
 
 # Web UI
-
-The front end of this demo is a React app. We will deploy it as an S3 static website and create a CloudFront distribution.
 
 To deploy the React app:
 

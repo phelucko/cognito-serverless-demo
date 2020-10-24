@@ -30,53 +30,102 @@ class CognitoServerlessDemoStack extends cdk.Stack {
       websiteErrorDocument: 'index.html',
     });
 
-    // Setup CDN
-    const distribution = new cloudfront.CloudFrontWebDistribution(this, 'CognitoServerlessDemoDistribution', {
-      originConfigs: [
-        {
-          s3OriginSource: { s3BucketSource: bucket },
-          behaviors: [{ isDefaultBehavior: true }],
-        },
-      ],
-      errorConfigurations: [
-        {
-          errorCode: 403,
-          responseCode: 200,
-          responsePagePath: '/index.html',
-          errorCachingMinTtl: 86400,
-        },
-        {
-          errorCode: 404,
-          responseCode: 200,
-          responsePagePath: '/index.html',
-          errorCachingMinTtl: 86400,
-        },
-      ],
-      viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+    // Setup origin access identity
+    const oai = new cloudfront.OriginAccessIdentity(this, 'CognitoServerlessDemoOai', {
+      comment: 'Congito Serverless Demo OAI',
     });
+
+    // Setup CDN
+    const distribution = new cloudfront.CloudFrontWebDistribution(
+      this,
+      'CognitoServerlessDemoDistribution',
+      {
+        originConfigs: [
+          {
+            s3OriginSource: {
+              s3BucketSource: bucket,
+              originAccessIdentity: oai,
+            },
+            behaviors: [{ isDefaultBehavior: true }],
+          },
+        ],
+        errorConfigurations: [
+          {
+            errorCode: 403,
+            responseCode: 200,
+            responsePagePath: '/index.html',
+            errorCachingMinTtl: 86400,
+          },
+          {
+            errorCode: 404,
+            responseCode: 200,
+            responsePagePath: '/index.html',
+            errorCachingMinTtl: 86400,
+          },
+        ],
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      },
+    );
 
     // Save distribution URL to output
     const entrypoint = new cdk.CfnOutput(this, 'CognitoServerlessDemoUrl', {
       value: `https://${distribution.distributionDomainName}`,
     });
 
-    // Setup origin access identity
-    const oai = new cloudfront.OriginAccessIdentity(this, 'CognitoServerlessDemoOai', {
-      comment: 'Congito Serverless Demo OAI',
+    // Setup lambda
+    const backend = new lambda.Function(this, 'CognitoServerlessDemoLambda', {
+      runtime: lambda.Runtime.NODEJS_10_X,
+      handler: 'api.proxyRouter',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../assets/lambda')),
     });
 
-    // Setup bucket permissions
-    bucket.addToResourcePolicy(new iam.PolicyStatement({
-      effect: 'Allow',
-      actions: ['s3:GetObject'],
-      principals: [
-        new iam.CanonicalUserPrincipal(
-          oai.cloudFrontOriginAccessIdentityS3CanonicalUserId,
-        ),
-      ],
-      resources: [`arn:aws:s3:::${bucket.bucketName}/*`],
-    }));
+    // Setup API Gateway
+    const api = new apigateway.LambdaRestApi(this, 'CognitoServerlessDemoApi', {
+      handler: backend,
+      proxy: false,
+    });
 
+    const integration = new apigateway.LambdaIntegration(backend);
+
+    const noAuth = api.root.addResource('no-auth');
+    const noAuthMethod = noAuth.addMethod('GET', integration, {
+      apiKeyRequired: true,
+    });
+    noAuth.addCorsPreflight({
+      allowOrigins: apigateway.Cors.ALL_ORIGINS,
+      allowMethods: ['GET', 'OPTIONS'],
+    });
+
+    const requireAuth = api.root.addResource('require-auth');
+    const requireAuthMethod = requireAuth.addMethod('GET', integration, {
+      apiKeyRequired: true,
+      authorizationType: apigateway.AuthorizationType.IAM,
+    });
+    requireAuth.addCorsPreflight({
+      allowOrigins: apigateway.Cors.ALL_ORIGINS,
+      allowMethods: ['GET', 'OPTIONS'],
+    });
+
+    const key = api.addApiKey('CognitoServerlessDemoApiKey', {
+      apiKeyName: 'cognito-severless-demo',
+    });
+
+    const plan = api.addUsagePlan('CognitoServerlessDemoApiUsagePlan', {
+      name: 'Basic',
+      apiKey: key,
+      throttle: {
+        rateLimit: 5,
+        burstLimit: 10,
+      },
+      quota: {
+        limit: 100,
+        period: apigateway.Period.DAY,
+      },
+    });
+
+    plan.addApiStage({
+      stage: api.deploymentStage,
+    });
     // Setup user pool
     const userPool = new cognito.UserPool(this, 'CognitoServerlessDemoUserPool', {
       userPoolName: 'cognito-serverless-demo',
@@ -104,7 +153,7 @@ class CognitoServerlessDemoStack extends cdk.Stack {
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
     });
 
-    userPool.addClient('CognitoServerlessDemoUserPoolClient', {
+    const userPoolClient = userPool.addClient('CognitoServerlessDemoUserPoolClient', {
       userPoolClientName: 'cognito-serverless-demo-client',
       supportedIdentityProviders: [cognito.UserPoolClientIdentityProvider.COGNITO],
       preventUserExistenceErrors: true,
@@ -142,60 +191,110 @@ class CognitoServerlessDemoStack extends cdk.Stack {
       },
     });
 
-    // Setup lambda
-    const backend = new lambda.Function(this, 'CognitoServerlessDemoLambda', {
-      runtime: lambda.Runtime.NODEJS_10_X,
-      handler: 'api.proxyRouter',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../../assets/lambda')),
-    });
-
-    // Setup API Gateway
-    const api = new apigateway.LambdaRestApi(this, 'CognitoServerlessDemoApi', {
-      handler: backend,
-      proxy: false,
-    });
-
-    const integration = new apigateway.LambdaIntegration(backend);
-
-    const noAuth = api.root.addResource('no-auth');
-    noAuth.addMethod('GET', integration, {
-      apiKeyRequired: true,
-    });
-    noAuth.addCorsPreflight({
-      allowOrigins: apigateway.Cors.ALL_ORIGINS,
-      allowMethods: ['GET', 'OPTIONS'],
-    });
-
-    const requireAuth = api.root.addResource('require-auth');
-    requireAuth.addMethod('GET', integration, {
-      apiKeyRequired: true,
-      authorizationType: apigateway.AuthorizationType.IAM,
-    });
-    requireAuth.addCorsPreflight({
-      allowOrigins: apigateway.Cors.ALL_ORIGINS,
-      allowMethods: ['GET', 'OPTIONS'],
-    });
-
-    const key = api.addApiKey('CognitoServerlessDemoApiKey', {
-      apiKeyName: 'cognito-severless-demo',
-    });
-
-    const plan = api.addUsagePlan('CognitoServerlessDemoApiUsagePlan', {
-      name: 'Basic',
-      apiKey: key,
-      throttle: {
-        rateLimit: 5,
-        burstLimit: 10,
+    // Setup identity pool
+    const identityPool = new cognito.CfnIdentityPool(
+      this,
+      'CognitoServerlessDemoIdentityPool',
+      {
+        identityPoolName: 'cognito-serverless-demo',
+        allowUnauthenticatedIdentities: true,
+        // cognitoIdentityProviders: [
+        //   {
+        //     clientId: userPoolClient.clientId,
+        //     providerName: userPool.userPoolProviderName,
+        //   },
+        // ],
       },
-      quota: {
-        limit: 100,
-        period: apigateway.Period.DAY,
-      },
-    });
+    );
 
-    plan.addApiStage({
-      stage: api.deploymentStage,
-    });
+    const authRole = new iam.Role(
+      this,
+      'CognitoServerlessDemoIdentityPoolAuthRole',
+      {
+        assumedBy: new iam.FederatedPrincipal(
+          'cognito-identity.amazonaws.com',
+          {
+            StringEquals: {
+              'cognito-identity.amazonaws.com:aud': identityPool.ref,
+            },
+            'ForAnyValue:StringLike': {
+              'cognito-identity.amazonaws.com:amr': 'authenticated',
+            },
+          },
+          'sts:AssumeRoleWithWebIdentity',
+        ),
+      },
+    );
+
+    authRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'mobileanalytics:PutEvents',
+          'cognito-sync:*',
+          'cognito-identity:*',
+        ],
+        resources: ['*'],
+      }),
+    );
+
+    authRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['execute-api:invoke'],
+        resources: [requireAuthMethod.methodArn],
+      }),
+    );
+
+    const unauthRole = new iam.Role(
+      this,
+      'CognitoServerlessDemoIdentityPoolUnauthRole',
+      {
+        assumedBy: new iam.FederatedPrincipal(
+          'cognito-identity.amazonaws.com',
+          {
+            StringEquals: {
+              'cognito-identity.amazonaws.com:aud': identityPool.ref,
+            },
+            'ForAnyValue:StringLike': {
+              'cognito-identity.amazonaws.com:amr': 'unauthenticated',
+            },
+          },
+          'sts:AssumeRoleWithWebIdentity',
+        ),
+      },
+    );
+
+    unauthRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'mobileanalytics:PutEvents',
+          'cognito-sync:*',
+        ],
+        resources: ['*'],
+      }),
+    );
+
+    unauthRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['execute-api:invoke'],
+        resources: [noAuthMethod.methodArn],
+      }),
+    );
+
+    new cognito.CfnIdentityPoolRoleAttachment(
+      this,
+      'CognitoServerlessDemoIdentityPoolRoleAttachment',
+      {
+        identityPoolId: identityPool.ref,
+        roles: {
+          authenticated: authRole.roleArn,
+          unauthenticated: unauthRole.roleArn,
+        },
+      },
+    );
   }
 }
 

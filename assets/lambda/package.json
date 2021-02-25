@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "create-api": "claudia create --region us-west-2  --api-module api --name auth-api-demo  --profile auth-api-demo",
-    "update-api": "claudia update --region us-west-2  --profile auth-api-demo",
+    "create-api": "claudia create --region us-east-1  --api-module api --name auth-api-demo  --profile auth-api-demo",
+    "update-api": "claudia update --region us-east-1  --profile auth-api-demo",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",

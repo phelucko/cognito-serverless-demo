@@ -126,6 +126,7 @@ class CognitoServerlessDemoStack extends cdk.Stack {
     plan.addApiStage({
       stage: api.deploymentStage,
     });
+
     // Setup user pool
     const userPool = new cognito.UserPool(this, 'CognitoServerlessDemoUserPool', {
       userPoolName: 'cognito-serverless-demo',
@@ -147,10 +148,13 @@ class CognitoServerlessDemoStack extends cdk.Stack {
       },
       selfSignUpEnabled: false,
       signInCaseSensitive: false,
-      autoVerify: {
-        email: true,
-      },
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+      passwordPolicy: {
+        minLength: 6,
+        requireDigits: false,
+        requireSymbols: false,
+        requireUppercase: false,
+      },
     });
 
     const userPoolClient = userPool.addClient('CognitoServerlessDemoUserPoolClient', {
@@ -185,6 +189,16 @@ class CognitoServerlessDemoStack extends cdk.Stack {
       },
     });
 
+    // Save user pool id to output
+    new cdk.CfnOutput(this, 'CognitoServerlessDemoUserPoolId', {
+      value: userPool.userPoolId,
+    });
+
+    // Save user pool client id to output
+    new cdk.CfnOutput(this, 'CognitoServerlessDemoUserPoolClientId', {
+      value: userPoolClient.userPoolClientId,
+    });
+
     userPool.addDomain('CognitoServerlessDemoUserPoolDomain', {
       cognitoDomain: {
         domainPrefix: 'auth-serverless-demo',
@@ -196,16 +210,22 @@ class CognitoServerlessDemoStack extends cdk.Stack {
       this,
       'CognitoServerlessDemoIdentityPool',
       {
-        identityPoolName: 'cognito-serverless-demo',
+        identityPoolName: 'cognito_serverless_demo',
         allowUnauthenticatedIdentities: true,
-        // cognitoIdentityProviders: [
-        //   {
-        //     clientId: userPoolClient.clientId,
-        //     providerName: userPool.userPoolProviderName,
-        //   },
-        // ],
+        cognitoIdentityProviders: [
+          {
+            clientId: userPoolClient.userPoolClientId,
+            providerName: `cognito-idp.us-east-1.amazonaws.com/${userPool.userPoolId}`,
+            serverSideTokenCheck: true,
+          },
+        ],
       },
     );
+
+    // Save identity pool id to output
+    new cdk.CfnOutput(this, 'CognitoServerlessDemoIdentityPoolId', {
+      value: identityPool.ref,
+    });
 
     const authRole = new iam.Role(
       this,
